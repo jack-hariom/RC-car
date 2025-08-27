@@ -1,0 +1,130 @@
+
+#include <IBusBM.h>
+IBusBM ibus;
+
+// Direction pins
+#define FLF 23  // Front Left Forward
+#define FLB 18  // Front Left Backward
+#define BLF 19  // Back Left Forward
+#define BLB 21  // Back Left Backward
+#define FRF 12  // Front Right Forward
+#define FRB 14  // Front Right Backward
+#define BRF 27  // Back Right Forward
+#define BRB 26  // Back Right Backward
+
+// Enable pins
+#define EN_FR 13  // Front Right enable
+#define EN_BR 25  // Back Right enable
+#define EN_FL 22  // Front Left enable
+#define EN_BL 5   // Back Left enable
+double x = 0.3;
+int motor_pins[] = {FRF, FRB, BRF, BRB, FLF, FLB, BLF, BLB};
+
+void setup() {
+  for(int i = 0; i < 8; i++){
+    pinMode(motor_pins[i], OUTPUT);
+    digitalWrite(motor_pins[i], LOW);
+  }
+
+  Serial.begin(115200);
+  Serial2.begin(115200, SERIAL_8N1, 16, 17);
+  ibus.begin(Serial2);
+
+  ledcSetup(0, 1000, 8); ledcAttachPin(EN_FR, 0);
+  ledcSetup(1, 1000, 8); ledcAttachPin(EN_BR, 1);
+  ledcSetup(2, 1000, 8); ledcAttachPin(EN_FL, 2);
+  ledcSetup(3, 1000, 8); ledcAttachPin(EN_BL, 3);
+}
+
+void loop() {
+  int ch1 = ibus.readChannel(0); // Rotate
+  int ch2 = ibus.readChannel(1); // Forward/Backward
+  int ch3 = ibus.readChannel(2); // Throttle (speed)
+  int ch4 = ibus.readChannel(3); // Strafe
+  int ch5 = ibus.readChannel(4);
+  // Serial.println(ch5);
+  int speed = map(ch3, 1000, 2000, 0, 255);
+   x = (ch5 - 1000.0) / 1000.0;
+  //  Serial.println(x);
+  bool moving = false;
+
+  // Clear all direction pins first
+  for(int i = 0; i < 8; i++){
+    digitalWrite(motor_pins[i], LOW);
+  }
+
+  // Diagonal Movement - with inverted ch1 and ch2 logic
+  if (ch1 < 1300 && ch2 < 1300) { // Forward + CW (inverted)
+    digitalWrite(FRF, HIGH);
+    digitalWrite(BLF, HIGH);
+    moving = true;
+  } else if (ch1 > 1800 && ch2 < 1300) { // Forward + CCW (inverted)
+    digitalWrite(FLF, HIGH);
+    digitalWrite(BRF, HIGH);
+    moving = true;
+  } else if (ch1 < 1300 && ch2 > 1800) { // Backward + CW (inverted)
+    digitalWrite(FRB, HIGH);
+    digitalWrite(BLB, HIGH);
+    moving = true;
+  } else if (ch1 > 1800 && ch2 > 1800) { // Backward + CCW (inverted)
+    digitalWrite(FLB, HIGH);
+    digitalWrite(BRB, HIGH);
+    moving = true;
+  }
+
+  // Straight Movement - inverted ch2
+  else if (ch2 < 1300) { // Forward (inverted)
+    digitalWrite(FRF, HIGH); digitalWrite(BRF, HIGH);
+    digitalWrite(FLF, HIGH); digitalWrite(BLF, HIGH);
+    moving = true;
+  } else if (ch2 > 1800) { // Backward (inverted)
+    digitalWrite(FRB, HIGH); digitalWrite(BRB, HIGH);
+    digitalWrite(FLB, HIGH); digitalWrite(BLB, HIGH);
+    moving = true;
+  }
+
+  // Rotation - inverted ch1
+  else if (ch1 < 1300) { // CW (inverted)
+    digitalWrite(FRB, HIGH); digitalWrite(BRB, HIGH);
+    digitalWrite(FLF, HIGH); digitalWrite(BLF, HIGH);
+    moving = true;
+    speed = speed-255*x;
+
+  } else if (ch1 > 1800) { // CCW (inverted)
+    digitalWrite(FRF, HIGH); digitalWrite(BRF, HIGH);
+    digitalWrite(FLB, HIGH); digitalWrite(BLB, HIGH);
+    moving = true;
+    speed = speed-255*x;
+  }
+
+  // Strafing - full 4 wheels control
+  else if (ch4 > 1800) { // Strafe Right
+    digitalWrite(FLF, HIGH);  // Front Left Forward
+    digitalWrite(BLB, HIGH);  // Back Left Backward
+    digitalWrite(FRB, HIGH);  // Front Right Backward
+    digitalWrite(BRF, HIGH);  // Back Right Forward
+    moving = true;
+  } else if (ch4 < 1300) { // Strafe Left
+    digitalWrite(FLB, HIGH);  // Front Left Backward
+    digitalWrite(BLF, HIGH);  // Back Left Forward
+    digitalWrite(FRF, HIGH);  // Front Right Forward
+    digitalWrite(BRB, HIGH);  // Back Right Backward
+    moving = true;
+  }
+
+  // Set speed to all motors if moving, else stop
+  if (moving) {
+    ledcWrite(0, speed);
+    ledcWrite(1, speed);
+    ledcWrite(2, speed);
+    ledcWrite(3, speed);
+  } else {
+    for (int i = 0; i < 8; i++) digitalWrite(motor_pins[i], LOW);
+    ledcWrite(0, 0);
+    ledcWrite(1, 0);
+    ledcWrite(2, 0);
+    ledcWrite(3, 0);
+  }
+
+  delay(10);
+}
